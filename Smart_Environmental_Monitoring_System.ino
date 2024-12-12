@@ -34,6 +34,7 @@ const int LCD_Address = 0x27;//Default address for 20x4 LCD
 const int LCD_COL = 20; // 20 characters long
 const int LCD_ROW = 4; // 4 characters wide
 const int switchButton = 5; //Pin for switch button
+const int buttonTwo = 16;
 const char* ntpServer = "pool.ntp.org"; //This char represents the server where we request the time
 const long  gmtOffset_sec = 0; //This long defines the offset in seconds between your time zone and GMT
 const int   daylightOffset_sec = 3600; //This int defines the Daylight savings time offset
@@ -55,9 +56,13 @@ float getAirQuality();
 void printAirQuality();
 void configMQ135();
 void calibrateMQ135();
-void selectGasType();
+void printCOAQI();
+void getCOAQI();
+float calculateCOAQI();
+float subMenu();
 
 int escape = 0;
+int loaded = 0;
 int buttonState = 1; 
 int currentMenu = 0;
 int prevButtonState = 1;
@@ -72,115 +77,15 @@ void setup() {
    lcd.backlight();
    bootScreen();
    pinMode(switchButton, INPUT_PULLUP);
+   pinMode(buttonTwo, INPUT_PULLUP);
+   
 }
 
 void loop() {
  menuCycle();
 }
 
-void selectGasType() {
-  Serial.println("Please Input Desired Gas To Detect");
-  
-
-  while (1) { // Remains in loop until a valid choice is entered
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Please Choose One");
-    lcd.setCursor(0, 1);
-    lcd.print("Of The Following");
-    lcd.setCursor(0, 2);
-    lcd.print("Gases To Detect:");
-    delay(2000); // Wait 2 seconds to ensure the user can read it
-    
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("1: Alcohol");
-    lcd.setCursor(0, 1);
-    lcd.print("2: Hydrogen");
-    lcd.setCursor(0, 2);
-    lcd.print("3: LP Gas");
-    lcd.setCursor(0, 3);
-    lcd.print("4: Carbon Monoxide");
-    delay(2000); 
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("5: Propane");
-    lcd.setCursor(0, 1);
-    lcd.print("Enter 1-5:");
-    delay(2000);
-   
-
-    if (Serial.available() > 0) {
-      char choice = Serial.read(); 
-      Serial.print("Input received: ");
-      Serial.println(choice); 
-
-      if (choice >= '1' && choice <= '5') {
-        
-        switch (choice) {
-          case '1':
-        configMQ135(3616.1, -2.675); // Each of these values are useed to calibrate MQ135 important to help detect certain gases in the air
-        lcd.clear();
-        lcd.print("Device Configured");
-        lcd.setCursor(0,2);
-        lcd.print("To Detect Alcohol");
-        gasType = "Alcohol";
-        break;
-
-        case '2':
-        configMQ135(987.99, -2.162 );
-        lcd.clear();
-        lcd.print("Device Configured");
-        lcd.setCursor(0,2);
-        lcd.print("To Detect Hydrogen");
-        gasType = "Hydrogen";
-        break;
-
-        case '3':
-        configMQ135(574.25,-2.222);
-         lcd.clear();
-        lcd.print("Device Configured");
-         lcd.setCursor(0,2);
-        lcd.print("To Detect LP Gas");
-        gasType = "LP Gas";
-        break;
-
-        case '4':
-        configMQ135(36974,-3.109);
-        lcd.print("Device Configured");
-         lcd.setCursor(0,2);
-        lcd.print("To Detect Carbon Monoxide");
-        gasType = "CO";
-        break;
-
-        case '5':
-        configMQ135(658.71,-2.168);
-        lcd.print("Device Configured");
-         lcd.setCursor(0,2);
-        lcd.print("To Detect Propane Gas");
-        gasType = "Propane";
-        break;
-        }
-        break; // Exit the loop once a valid choice is made
-      } else {
-        // Handle invalid input
-        Serial.println("Invalid input. Please enter a number between 1 and 5.");
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Invalid Input");
-        delay(1000); // Show the error message for 1 second
-      }
-    }
-
-    delay(100); // Small delay to allow Serial buffer to process new input
-  }
-}
-
-
-void configMQ135(float a, float b) { //Passes chosen gas type with values to setup sensor to detect certain gas
+void configMQ135(float a, float b) { //Recieves chosen gas type with values to setup sensor to detect certain gas
     MQ135.setRegressionMethod(1);
     MQ135.setA(a);
     MQ135.setB(b);
@@ -200,8 +105,12 @@ void calibrateMQ135() {
 
 
 void menuCycle(){
+  if(loaded == 0){ //Allows us to enter the menu right away without waiting for button press
+    prevButtonState = LOW;
+     int loaded = 1;
+  }
   buttonState = digitalRead(switchButton);
-  
+ 
   if(buttonState == HIGH && prevButtonState == LOW ){ //buttonState is an active high switch so when the button is pressed it becomes low which becomes important in loop as we set buttonState equal to prevButtonState thus fufiling our if statement
    
     currentMenu++;
@@ -223,7 +132,12 @@ void menuCycle(){
     case 2:
      lcd.clear();
     while(escape == 0){
+      if(digitalRead(buttonTwo) == HIGH){
       printTempC();
+      }
+      else {
+        printTempF();
+      }
       if(digitalRead(switchButton) == LOW){
       escape = 1;
     }
@@ -234,8 +148,8 @@ void menuCycle(){
 
     case 3:
      lcd.clear();
+     lcd.print("BMP Placeholder");
     while(escape == 0){
-      printTempF();
       if(digitalRead(switchButton) == LOW){
       escape = 1;
     }
@@ -246,13 +160,13 @@ void menuCycle(){
 
    case 4:
      lcd.clear();
-    while(escape == 0){
-      printAirQuality();
-      if(digitalRead(switchButton) == LOW){
-      escape = 1;
-    }
+   while(escape == 0){
+      if (subMenu() == 1){ //Keep calling subMenu until we recieve 1
+        currentMenu = 0;//Resets currentMenu to ensure we always go back to case 1
+        escape = 1; //Break out of loop
+      }
+      
   }
-    
     escape = 0;
     break;
     }
@@ -260,9 +174,97 @@ void menuCycle(){
      currentMenu = 0;
      } 
   }
- 
+   prevButtonState = buttonState;
    
+}
+
+float subMenu() {
+
+  if(loaded == 0){ //Allows us to enter the menu right away without waiting for button press
+    prevButtonState = LOW;
+    int loaded = 1;
+  }
+
+  buttonState = digitalRead(buttonTwo);
+
+  if (buttonState == HIGH && prevButtonState == LOW) {
+    currentMenu++;
+    currentMenu = currentMenu % (menuNum + 1);
+
+    switch (currentMenu) {
+      case 1:
+        lcd.clear();
+        while (escape == 0) { 
+          configMQ135(36974,-3.109); //Call configMQ135 and pass these values to setup detection of CO
+          getCOAQI();
+          if (digitalRead(buttonTwo) == LOW) {
+            escape = 1; 
+          }
+          if (digitalRead(switchButton) == LOW) {
+            return 1; // If switchButton is pressed return 1 returning us to menuCycle
+          }
+        }
+        escape = 0; 
+        break;
+
+      case 2:
+        lcd.clear();
+        while (escape == 0) {
+          configMQ135(574.25,-2.222);
+          gasType = "LP Gas";
+          printAirQuality();
+          if (digitalRead(buttonTwo) == LOW) {
+            escape = 1; 
+          }
+          if (digitalRead(switchButton) == LOW) {
+            return 1; 
+          }
+        }
+        escape = 0; 
+        break;
+
+      case 3:
+        lcd.clear();
+        while (escape == 0) {
+         configMQ135(658.71,-2.168);
+          gasType = "Propane";
+          printAirQuality();
+          if (digitalRead(buttonTwo) == LOW) {
+            escape = 1; 
+            
+          }
+          if (digitalRead(switchButton) == LOW) {
+            return 1; 
+          }
+        }
+        escape = 0; 
+        break;
+
+      case 4:
+        lcd.clear();
+        while (escape == 0) {
+         configMQ135(3616.1, -2.675);
+          gasType = "Alcohol";
+          printAirQuality();
+         if (digitalRead(buttonTwo) == LOW) {
+            escape = 1; 
+          }
+          if (digitalRead(switchButton) == LOW) {
+            return 1; 
+          }
+        }
+        escape = 0; 
+        break;
     }
+
+    if (currentMenu == menuNum) {
+      currentMenu = 0;
+    }
+  }
+
+  prevButtonState = buttonState; 
+  return 0; 
+}
 
 void mainMenu(){
   lcd.setCursor(2,0);
@@ -311,44 +313,55 @@ void printTempF(){
 }
 void bootScreen(){
   lcd.setCursor(0,0); //setCursor function allows to place the cursor on (row,column) in this case the cursor is at position (0,0)
-  lcd.print("Welcome to the Smart");
+  lcd.print("Smart Envirnomental");
   lcd.setCursor(0,1);
-  lcd.print("Environment Monitor");
-  lcd.setCursor(7,2);
-  lcd.print("System");
-  delay(4500); 
-  lcd.clear(); 
-  lcd.print("Features");
-  lcd.setCursor(0,1);
-  lcd.print("Button Cycles Menu's");
-  lcd.setCursor(0,2);
-  lcd.print("Users Can Config Air");
-  lcd.setCursor(0,3);
-  lcd.print("Quality Sensor");
-  lcd.setCursor(7,2);
-  delay(5500);
+  lcd.print(" Monitoring System");
+  delay(3000); 
   lcd.clear();
-  lcd.print("Current Menu's");
-  lcd.setCursor(0,1);
-  lcd.print("1: Home Screen");
-   lcd.setCursor(0,2);
-  lcd.print("2: Temp(C)");
-   lcd.setCursor(0,3);
-  lcd.print("3: Temp(F)");
-  delay(2500);
-  lcd.clear();
-  lcd.print("4: Air Quality");
-  delay(2000);
   wifiStart();
   lcd.clear();
   calibrateMQ135();
-  selectGasType();
-  lcd.clear();
-  lcd.print("Press Button To");
-  lcd.setCursor(0,1);
-  lcd.print("Finalize Startup");
-
 }
+float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) {
+    return ((ih - il) / (ch - cl)) * (ppm - cl) + il;
+    
+}
+
+void getCOAQI() { //To calculate Carbon Monoxide AQI We Ranges Breakpoints of CO
+  float PPM = getAirQuality(); //Set PPM = to value given from getAirQuality() 
+
+  if (PPM >= 0 && PPM <= 4.4) { //If PPM is from 0-4.4 Pass The Concentration of CO along with breakpoints of PPM and the AQI scale range
+    float AQI = calculateCOAQI(PPM, 0, 4.4, 0, 50); 
+    printCOAQI("Good", AQI,PPM); //Calls printCOAQI passing string for air quality value of AQI and PPM
+  } 
+  else if (PPM >= 4.5 && PPM <= 9.4) { 
+    float AQI = calculateCOAQI(PPM, 4.5, 9.4, 51, 100);
+    printCOAQI("Moderate", AQI, PPM);
+  } 
+  else if (PPM >= 9.5 && PPM <= 12.4) {
+    float AQI = calculateCOAQI(PPM, 9.5, 12.4, 101, 150);
+    printCOAQI("Harmful To Sensitive", AQI, PPM);
+  } 
+  else if (PPM >= 12.5 && PPM <= 15.4) {
+    float AQI = calculateCOAQI(PPM, 12.5, 15.4, 151, 200); 
+    printCOAQI("Harmful", AQI, PPM);
+  } 
+  else if (PPM >= 15.5 && PPM <= 30.4) {
+    float AQI = calculateCOAQI(PPM, 15.5, 30.4, 201, 300);
+    printCOAQI("Very Harmful", AQI, PPM);
+  }
+  else if (PPM >= 30.5 && PPM <= 40.4) {
+    float AQI = calculateCOAQI(PPM, 30.5, 40.4, 301, 400);
+    printCOAQI("Hazardous", AQI, PPM);
+  }
+  else if (PPM > 40.5) {
+    float AQI = calculateCOAQI(PPM, 40.5, PPM, 401, 500);
+    printCOAQI("Very Hazardous", AQI, PPM);
+  }
+  
+}
+
+
 
 float getTemp(){
   float temperature = dht.readTemperature(); //readTemperature() is a function in DHT library used to activate temperature readings
@@ -363,7 +376,6 @@ float getHumidity(){
 float getAirQuality(){
   MQ135.update(); //Mq135 function from library updates internal state of MQ135
   float airQuality = MQ135.readSensor(); //Another MQ135 function sets airQuality equal to analog vaule given from MQ135
-  delay(500); //Waits a half second to take next reading 
   return airQuality;
 }
 
@@ -371,14 +383,26 @@ void printAirQuality(){
 lcd.setCursor(0, 0);  
 lcd.print("Gas Type: ");
 lcd.print(gasType);  //Global variable set earlier to print Gas Type sensor is detecting
-
 lcd.setCursor(0, 2);  
 lcd.print("Air Quality:");
-
 lcd.setCursor(0, 3);  
 lcd.print(getAirQuality()); //Printing air quality derived from getAirQuality
 lcd.print(" PPM");  
-  }
+}
+
+void printCOAQI(String quality, float aqi, float ppm){ //Values from getCOAQI to be printed on LCD
+  lcd.setCursor(0, 0); 
+  lcd.print("Air Quality:" );
+  lcd.setCursor(0, 1);
+  lcd.setCursor(0, 1);
+  lcd.print(quality);
+  lcd.setCursor(0, 2);
+  lcd.print("AQI: ");
+  lcd.print(aqi);
+  lcd.setCursor(0, 3);
+  lcd.print(ppm);
+  lcd.print(" PPM");
+}
 
 void wifiStart(){
   lcd.clear();
