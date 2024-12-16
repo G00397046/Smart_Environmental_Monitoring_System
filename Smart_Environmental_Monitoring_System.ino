@@ -1,20 +1,18 @@
-
 //Patrick Cahill
 //12-6-24
 //Smart Environmental Monitoring System Upload 1
 
 //Parameters for Gas Sensor Config
- /*Gas    | a      | b
+/*Gas    | a      | b
     H2     | 987.99 | -2.162
     LPG    | 574.25 | -2.222
     CO     | 36974  | -3.109
     Alcohol| 3616.1 | -2.675
-    Propane| 658.71 | -2.168
+    Propane| 658.71 | -2.1681
 */
 
-#include <LiquidCrystal_I2C.h> //Library for LCD
+#include <LiquidCrystal_I2C.h> //Library for LCD1
 #include "DHT.h" //Library for  DHT 11 Temp Sensor
-#include <WebServer.h> // Library for web server
 #include "time.h" //Time library on ESP 32
 #include <WiFi.h>
 #include <MQUnifiedsensor.h>
@@ -27,21 +25,21 @@
 #define RatioMQ135CleanAir      (9.83) // RS / R0 = 9.83 ppm for MQ135
 #define Type                    ("MQ-135") //MQ135 instead of MQ2, for air quality sensor
 
-const char *ssid     = "WiFi"; //Used to connect to hotspot from phone
-const char *password = "Password";
+const char * ssid = "WiFi"; //Used to connect to hotspot from phone
+const char * password = "Password";
 
-const int LCD_Address = 0x27;//Default address for 20x4 LCD
+const int LCD_Address = 0x27; //Default address for 20x4 LCD
 const int LCD_COL = 20; // 20 characters long
 const int LCD_ROW = 4; // 4 characters wide
 const int switchButton = 5; //Pin for switch button
 const int buttonTwo = 16;
-const char* ntpServer = "pool.ntp.org"; //This char represents the server where we request the time
-const long  gmtOffset_sec = 0; //This long defines the offset in seconds between your time zone and GMT
-const int   daylightOffset_sec = 3600; //This int defines the Daylight savings time offset
+const char * ntpServer = "pool.ntp.org"; //This char represents the server where we request the time1
+const long gmtOffset_sec = 0; //This long defines the offset in seconds between your time zone and GMT
+const int daylightOffset_sec = 3600; //This int defines the Daylight savings time offset
 
 MQUnifiedsensor MQ135(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type); //Input values needed to setup MQ135
 DHT dht(DHT11_PIN, DHT11); //Sets DHT pin to 18 and the DHT type to 11
-LiquidCrystal_I2C lcd(LCD_Address,LCD_COL,LCD_ROW); //Sets LCD address to 0x27 for a 20 by 4 character LCD
+LiquidCrystal_I2C lcd(LCD_Address, LCD_COL, LCD_ROW); //Sets LCD address to 0x27 for a 20 by 4 character LCD
 
 void menuCycle();
 void mainMenu();
@@ -63,124 +61,121 @@ float subMenu();
 
 int escape = 0;
 int loaded = 0;
-int buttonState = 1; 
+int buttonState = 1;
 int currentMenu = 0;
 int prevButtonState = 1;
 int menuNum = 4;
 String gasType = "";
 
-
 void setup() {
-   Serial.begin(9600);
-   dht.begin(); 
-   lcd.init();
-   lcd.backlight();
-   bootScreen();
-   pinMode(switchButton, INPUT_PULLUP);
-   pinMode(buttonTwo, INPUT_PULLUP);
-   
+  Serial.begin(9600);
+  dht.begin();
+  lcd.init();
+  lcd.backlight();
+  bootScreen();
+  pinMode(switchButton, INPUT_PULLUP); //Using pullup resistors in ESP-32  
+  pinMode(buttonTwo, INPUT_PULLUP);
+
 }
 
 void loop() {
- menuCycle();
+  menuCycle();
 }
 
 void configMQ135(float a, float b) { //Recieves chosen gas type with values to setup sensor to detect certain gas
-    MQ135.setRegressionMethod(1);
-    MQ135.setA(a);
-    MQ135.setB(b);
- }
+  MQ135.setRegressionMethod(1);
+  MQ135.setA(a);
+  MQ135.setB(b);
+}
 
 void calibrateMQ135() {
   lcd.print("Calibrating MQ-135"); //Calibration code for MQ135 it will take 10 readings of R0 then using the average of them to set a baseline resistance for accurate air quality measurement
   delay(2000);
- float calcR0 = 0;
+  float calcR0 = 0;
   for (int i = 1; i <= 10; i++) {
-    MQ135.update(); 
-    calcR0 += MQ135.calibrate(RatioMQ135CleanAir); 
+    MQ135.update();
+    calcR0 += MQ135.calibrate(RatioMQ135CleanAir);
     Serial.print(".");
   }
   MQ135.setR0(calcR0 / 10);
 }
 
-
-void menuCycle(){
-  if(loaded == 0){ //Allows us to enter the menu right away without waiting for button press
+void menuCycle() {
+  if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
     prevButtonState = LOW;
-     int loaded = 1;
+    int loaded = 1;
   }
   buttonState = digitalRead(switchButton);
- 
-  if(buttonState == HIGH && prevButtonState == LOW ){ //buttonState is an active high switch so when the button is pressed it becomes low which becomes important in loop as we set buttonState equal to prevButtonState thus fufiling our if statement
-   
-    currentMenu++;
-    currentMenu = currentMenu % (menuNum + 1);  //Every time we press button in loop it goes back into if statement ading currentMenu. This line is used to loop back to our mainMenu
 
-    switch(currentMenu){
+  if (buttonState == HIGH && prevButtonState == LOW) { //buttonState is an active high switch so when the button is pressed it becomes low which becomes important in loop as we set buttonState equal to prevButtonState thus fufiling our if statement
+
+    currentMenu++;
+    currentMenu = currentMenu % (menuNum + 1); //Every time we press button in loop it goes back into if statement ading currentMenu. This line is used to loop back to our mainMenu
+
+    switch (currentMenu) {
     case 1:
-    lcd.clear();
-    while(escape == 0){
-      mainMenu();
-      if(digitalRead(switchButton) == LOW){ //Again active high switch so when button is pressed esscape will be 1 breaking out of loop
-      escape = 1;
-    }
-  }
-    
-    escape = 0;
-    break;
+      lcd.clear();
+      while (escape == 0) {
+        mainMenu();
+        if (digitalRead(switchButton) == LOW) { //Again active high switch so when button is pressed esscape will be 1 breaking out of loop
+          escape = 1;
+        }
+      }
+
+      escape = 0;
+      break;
 
     case 2:
-     lcd.clear();
-    while(escape == 0){
-      if(digitalRead(buttonTwo) == HIGH){
-      printTempC();
+      lcd.clear();
+      while (escape == 0) {
+        if (digitalRead(buttonTwo) == HIGH) {
+          printTempC();
+        } else { //If button is pressed display temp in F
+          printTempF();
+        }
+        if (digitalRead(switchButton) == LOW) { // If primary button press is detected break out, using escape reset and increment currentMenu
+          escape = 1;
+        }
       }
-      else {
-        printTempF();
-      }
-      if(digitalRead(switchButton) == LOW){
-      escape = 1;
-    }
-  }
-    
-    escape = 0;
-    break;
+
+      escape = 0;
+      break;
 
     case 3:
-     lcd.clear();
-     lcd.print("BMP Placeholder");
-    while(escape == 0){
-      if(digitalRead(switchButton) == LOW){
-      escape = 1;
-    }
-  }
-
-   escape = 0;
-    break;
-
-   case 4:
-     lcd.clear();
-   while(escape == 0){
-      if (subMenu() == 1){ //Keep calling subMenu until we recieve 1
-        currentMenu = 0;//Resets currentMenu to ensure we always go back to case 1
-        escape = 1; //Break out of loop
+      lcd.clear();
+      lcd.print("BMP Placeholder");
+      while (escape == 0) {
+        if (digitalRead(switchButton) == LOW) {
+          escape = 1;
+        }
       }
-      
-  }
-    escape = 0;
-    break;
+
+      escape = 0;
+      break;
+
+    case 4:
+      lcd.clear();
+      while (escape == 0) {
+        if (subMenu() == 1) { //Keep calling subMenu until we recieve 1
+          currentMenu = 0; //Resets currentMenu to ensure we always go back to case 1
+          escape = 1; //Break out of loop
+        }
+
+      }
+      escape = 0;
+      break;
     }
-   if (currentMenu == menuNum){
-     currentMenu = 0;
-     } 
+    if (currentMenu == menuNum) {
+      currentMenu = 0;
+    }
   }
-   prevButtonState = buttonState;
-   
+  prevButtonState = buttonState; // Set prevButtonState to buttonState which will be low on button press allowing user to enter if
+
 }
 
 float subMenu() {
 
-  if(loaded == 0){ //Allows us to enter the menu right away without waiting for button press
+  if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
     prevButtonState = LOW;
     int loaded = 1;
   }
@@ -192,69 +187,69 @@ float subMenu() {
     currentMenu = currentMenu % (menuNum + 1);
 
     switch (currentMenu) {
-      case 1:
-        lcd.clear();
-        while (escape == 0) { 
-          configMQ135(36974,-3.109); //Call configMQ135 and pass these values to setup detection of CO
-          getCOAQI();
-          if (digitalRead(buttonTwo) == LOW) {
-            escape = 1; 
-          }
-          if (digitalRead(switchButton) == LOW) {
-            return 1; // If switchButton is pressed return 1 returning us to menuCycle
-          }
+    case 1:
+      lcd.clear();
+      while (escape == 0) {
+        configMQ135(36974, -3.109); //Call configMQ135 and pass these values to setup detection of CO
+        getCOAQI();
+        if (digitalRead(buttonTwo) == LOW) {
+          escape = 1;
         }
-        escape = 0; 
-        break;
+        if (digitalRead(switchButton) == LOW) {
+          return 1; // If switchButton is pressed return 1 returning us to menuCycle
+        }
+      }
+      escape = 0;
+      break;
 
-      case 2:
-        lcd.clear();
-        while (escape == 0) {
-          configMQ135(574.25,-2.222);
-          gasType = "LP Gas";
-          printAirQuality();
-          if (digitalRead(buttonTwo) == LOW) {
-            escape = 1; 
-          }
-          if (digitalRead(switchButton) == LOW) {
-            return 1; 
-          }
+    case 2:
+      lcd.clear();
+      while (escape == 0) {
+        configMQ135(574.25, -2.222); //Call configMQ135 and pass these values to setup detection of LP Gas
+        gasType = "LP Gas";
+        printAirQuality();
+        if (digitalRead(buttonTwo) == LOW) {
+          escape = 1;
         }
-        escape = 0; 
-        break;
+        if (digitalRead(switchButton) == LOW) {
+          return 1;
+        }
+      }
+      escape = 0;
+      break;
 
-      case 3:
-        lcd.clear();
-        while (escape == 0) {
-         configMQ135(658.71,-2.168);
-          gasType = "Propane";
-          printAirQuality();
-          if (digitalRead(buttonTwo) == LOW) {
-            escape = 1; 
-            
-          }
-          if (digitalRead(switchButton) == LOW) {
-            return 1; 
-          }
-        }
-        escape = 0; 
-        break;
+    case 3:
+      lcd.clear();
+      while (escape == 0) {
+        configMQ135(658.71, -2.168); //Call configMQ135 and pass these values to setup detection of Propane
+        gasType = "Propane";
+        printAirQuality();
+        if (digitalRead(buttonTwo) == LOW) {
+          escape = 1;
 
-      case 4:
-        lcd.clear();
-        while (escape == 0) {
-         configMQ135(3616.1, -2.675);
-          gasType = "Alcohol";
-          printAirQuality();
-         if (digitalRead(buttonTwo) == LOW) {
-            escape = 1; 
-          }
-          if (digitalRead(switchButton) == LOW) {
-            return 1; 
-          }
         }
-        escape = 0; 
-        break;
+        if (digitalRead(switchButton) == LOW) {
+          return 1;
+        }
+      }
+      escape = 0;
+      break;
+
+    case 4:
+      lcd.clear();
+      while (escape == 0) {
+        configMQ135(3616.1, -2.675); //Call configMQ135 and pass these values to setup detection of Alcohol
+        gasType = "Alcohol";
+        printAirQuality();
+        if (digitalRead(buttonTwo) == LOW) {
+          escape = 1;
+        }
+        if (digitalRead(switchButton) == LOW) {
+          return 1;
+        }
+      }
+      escape = 0;
+      break;
     }
 
     if (currentMenu == menuNum) {
@@ -262,137 +257,127 @@ float subMenu() {
     }
   }
 
-  prevButtonState = buttonState; 
-  return 0; 
+  prevButtonState = buttonState;
+  return 0; //Returns 0 to ensure if statement continues to check for 1
 }
 
-void mainMenu(){
-  lcd.setCursor(2,0);
+void mainMenu() {
+  lcd.setCursor(2, 0);
   lcd.print("SEMS - Main Menu");
   printTime();
 }
 
-void printTime(){
-  lcd.setCursor(0,3);
+void printTime() { //Used Random Nerd Tutorial NTP Date and Time Setup Guide https://randomnerdtutorials.com/esp32-date-time-ntp-client-server-arduino/
+  lcd.setCursor(0, 3);
   struct tm timeinfo; //Created the structure to store local time info
-  getLocalTime(&timeinfo); //Saving all the details of the local time to the time structure
-  lcd.print(&timeinfo, " %a, %b %d  %H:%M "); //To access the members of timeinfo you use the following specifiers
+  getLocalTime( & timeinfo); //Saving all the details of the local time to the time structure
+  lcd.print( & timeinfo, " %a, %b %d  %H:%M "); //To access the members of timeinfo you use the following specifiers
 }
 
-void printTempC(){
- float tempC = getTemp(); //Calls getTemp which returns current temp readings and sets tempC equal to them
- float humi = getHumidity();
- float heatIndex;
- 
-  lcd.setCursor(3,0);
+void printTempC() {
+  float tempC = getTemp(); //Calls getTemp which returns current temp readings and sets tempC equal to them
+  float humi = getHumidity();
+
+  lcd.setCursor(3, 0);
   lcd.print("Temperature(C) ");
-  lcd.setCursor(0,1);
+  lcd.setCursor(0, 1);
   lcd.print("Celcius:      ");
   lcd.print(tempC);
   lcd.print("C");
-  lcd.setCursor(0,2);
+  lcd.setCursor(0, 2);
   lcd.print("Humidity:     ");
   lcd.print(humi);
-  lcd.print("%"); 
+  lcd.print("%");
 }
-void printTempF(){
+void printTempF() {
   float tempF = (getTemp() * 1.8) + 32;
   float humi = getHumidity();
 
-
-  lcd.setCursor(3,0);
+  lcd.setCursor(3, 0);
   lcd.print("Temperature(F) ");
-  lcd.setCursor(0,1);
+  lcd.setCursor(0, 1);
   lcd.print("Fahernheit:   ");
   lcd.print(tempF);
   lcd.print("F");
-  lcd.setCursor(0,2);
+  lcd.setCursor(0, 2);
   lcd.print("Humidity:     ");
   lcd.print(humi);
-  lcd.print("%"); 
+  lcd.print("%");
 }
-void bootScreen(){
-  lcd.setCursor(0,0); //setCursor function allows to place the cursor on (row,column) in this case the cursor is at position (0,0)
+void bootScreen() {
+  lcd.setCursor(0, 0); //setCursor function allows to place the cursor on (row,column) in this case the cursor is at position (0,0)
   lcd.print("Smart Envirnomental");
-  lcd.setCursor(0,1);
+  lcd.setCursor(0, 1);
   lcd.print(" Monitoring System");
-  delay(3000); 
+  delay(3000);
   lcd.clear();
   wifiStart();
   lcd.clear();
   calibrateMQ135();
 }
-float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) {
-    return ((ih - il) / (ch - cl)) * (ppm - cl) + il;
-    
+float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Note: BP means breakpoint and the index corresponds to the Concentration(BP) and Concentration is current PPM
+  return ((ih - il) / (ch - cl)) * (ppm - cl) + il; // AQI = (Index(high) - Index(low)) / (Concentration(BP)(high) - Concentration(BP)(low)) * (Concentration -  Concentration(BP)(low)) + Index(low) 
+
 }
 
 void getCOAQI() { //To calculate Carbon Monoxide AQI We Ranges Breakpoints of CO
   float PPM = getAirQuality(); //Set PPM = to value given from getAirQuality() 
 
   if (PPM >= 0 && PPM <= 4.4) { //If PPM is from 0-4.4 Pass The Concentration of CO along with breakpoints of PPM and the AQI scale range
-    float AQI = calculateCOAQI(PPM, 0, 4.4, 0, 50); 
-    printCOAQI("Good", AQI,PPM); //Calls printCOAQI passing string for air quality value of AQI and PPM
-  } 
-  else if (PPM >= 4.5 && PPM <= 9.4) { 
+    float AQI = calculateCOAQI(PPM, 0, 4.4, 0, 50);
+    printCOAQI("Good                ", AQI, PPM); //Calls printCOAQI passing string for air quality value of AQI and PPM
+  } else if (PPM >= 4.5 && PPM <= 9.4) {
     float AQI = calculateCOAQI(PPM, 4.5, 9.4, 51, 100);
-    printCOAQI("Moderate", AQI, PPM);
-  } 
-  else if (PPM >= 9.5 && PPM <= 12.4) {
+    printCOAQI("Moderate            ", AQI, PPM); //Spaces ensure no overlap
+  } else if (PPM >= 9.5 && PPM <= 12.4) {
     float AQI = calculateCOAQI(PPM, 9.5, 12.4, 101, 150);
     printCOAQI("Harmful To Sensitive", AQI, PPM);
-  } 
-  else if (PPM >= 12.5 && PPM <= 15.4) {
-    float AQI = calculateCOAQI(PPM, 12.5, 15.4, 151, 200); 
-    printCOAQI("Harmful", AQI, PPM);
-  } 
-  else if (PPM >= 15.5 && PPM <= 30.4) {
+  } else if (PPM >= 12.5 && PPM <= 15.4) {
+    float AQI = calculateCOAQI(PPM, 12.5, 15.4, 151, 200);
+    printCOAQI("Harmful             ", AQI, PPM);
+  } else if (PPM >= 15.5 && PPM <= 30.4) {
     float AQI = calculateCOAQI(PPM, 15.5, 30.4, 201, 300);
-    printCOAQI("Very Harmful", AQI, PPM);
-  }
-  else if (PPM >= 30.5 && PPM <= 40.4) {
+    printCOAQI("Very Harmful        ", AQI, PPM);
+  } else if (PPM >= 30.5 && PPM <= 40.4) {
     float AQI = calculateCOAQI(PPM, 30.5, 40.4, 301, 400);
-    printCOAQI("Hazardous", AQI, PPM);
-  }
-  else if (PPM > 40.5) {
+    printCOAQI("Hazardous           ", AQI, PPM);
+  } else if (PPM > 40.5) {
     float AQI = calculateCOAQI(PPM, 40.5, PPM, 401, 500);
-    printCOAQI("Very Hazardous", AQI, PPM);
+    printCOAQI("Very Hazardous      ", AQI, PPM);
   }
-  
+
 }
 
-
-
-float getTemp(){
+float getTemp() {
   float temperature = dht.readTemperature(); //readTemperature() is a function in DHT library used to activate temperature readings
   return temperature;
 }
 
-float getHumidity(){
+float getHumidity() {
   float humidity = dht.readHumidity(); //readHumidity() is a function in DHT library used to activate humidity readings
   return humidity;
 }
 
-float getAirQuality(){
+float getAirQuality() {
   MQ135.update(); //Mq135 function from library updates internal state of MQ135
   float airQuality = MQ135.readSensor(); //Another MQ135 function sets airQuality equal to analog vaule given from MQ135
   return airQuality;
 }
 
-void printAirQuality(){
-lcd.setCursor(0, 0);  
-lcd.print("Gas Type: ");
-lcd.print(gasType);  //Global variable set earlier to print Gas Type sensor is detecting
-lcd.setCursor(0, 2);  
-lcd.print("Air Quality:");
-lcd.setCursor(0, 3);  
-lcd.print(getAirQuality()); //Printing air quality derived from getAirQuality
-lcd.print(" PPM");  
+void printAirQuality() {
+  lcd.setCursor(0, 0);
+  lcd.print("Gas Type: ");
+  lcd.print(gasType); //Global variable set earlier to print Gas Type sensor is detecting
+  lcd.setCursor(0, 2);
+  lcd.print("Air Quality:");
+  lcd.setCursor(0, 3);
+  lcd.print(getAirQuality()); //Printing air quality derived from getAirQuality
+  lcd.print(" PPM");
 }
 
-void printCOAQI(String quality, float aqi, float ppm){ //Values from getCOAQI to be printed on LCD
-  lcd.setCursor(0, 0); 
-  lcd.print("Air Quality:" );
+void printCOAQI(String quality, float aqi, float ppm) { //Values from getCOAQI to be printed on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Air Quality:");
   lcd.setCursor(0, 1);
   lcd.setCursor(0, 1);
   lcd.print(quality);
@@ -404,15 +389,15 @@ void printCOAQI(String quality, float aqi, float ppm){ //Values from getCOAQI to
   lcd.print(" PPM");
 }
 
-void wifiStart(){
+void wifiStart() {
   lcd.clear();
   WiFi.begin(ssid, password);
-   lcd.print("Connecting to ");
-   lcd.print(ssid);
-   while ( WiFi.status() != WL_CONNECTED ) {}
-   lcd.clear();
-   lcd.setCursor(2,0);
-   lcd.print("Connection Made");
-   delay(1000);
-   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer); //Config the time with the proper offsets and NTP server address
+  lcd.print("Connecting to ");
+  lcd.print(ssid);
+  while (WiFi.status() != WL_CONNECTED) {}
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Connection Made");
+  delay(1000);
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer); //Config the time with the proper offsets and NTP server address
 }
