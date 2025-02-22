@@ -1,5 +1,5 @@
 //Patrick Cahill
-//12-6-24
+//2-22-25
 //Smart Environmental Monitoring System Upload 1
 
 //Parameters for Gas Sensor Config
@@ -311,7 +311,7 @@ void printTempF() {
   lcd.print("%");
 }
 void printBMPData(){
-  float pressure = bmp.readPressure(); //BMP 280 outputs pressue in Pa must divide by 100 to convert to hPa commonly used in weather measurements
+  float pressure = (bmp.readPressure() / 100); //BMP 280 outputs pressue in Pa must divide by 100 to convert to hPa commonly used in weather measurements
   float altitude = bmp.readAltitude(seaLevelPressure); //Uses standard pressure at sea level to make an accurate altitude measurement
 
   lcd.print("Pressure: ");
