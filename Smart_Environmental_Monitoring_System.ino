@@ -16,6 +16,7 @@
 #include "time.h" //Time library on ESP 32
 #include <WiFi.h>
 #include <MQUnifiedsensor.h>
+#include <Adafruit_BMP280.h> //Library for BMP 280
 
 #define DHT11_PIN 18 // DHT 11 is connnected to pin 18 on ESP 32
 #define Board                   ("ESP-32") // These are used to setup MQ135 got them from MQUnifiedsensor.h
@@ -24,11 +25,13 @@
 #define ADC_Bit_Resolution      (12) // 12-bit resolution for ESP32
 #define RatioMQ135CleanAir      (9.83) // RS / R0 = 9.83 ppm for MQ135
 #define Type                    ("MQ-135") //MQ135 instead of MQ2, for air quality sensor
+Adafruit_BMP280 bmp; // I2C
 
 const char * ssid = "WiFi"; //Used to connect to hotspot from phone
 const char * password = "Password";
 
 const int LCD_Address = 0x27; //Default address for 20x4 LCD
+const int BMP_Address = 0x76; //Address for BMP 280
 const int LCD_COL = 20; // 20 characters long
 const int LCD_ROW = 4; // 4 characters wide
 const int switchButton = 5; //Pin for switch button
@@ -36,6 +39,7 @@ const int buttonTwo = 16;
 const char * ntpServer = "pool.ntp.org"; //This char represents the server where we request the time1
 const long gmtOffset_sec = 0; //This long defines the offset in seconds between your time zone and GMT
 const int daylightOffset_sec = 3600; //This int defines the Daylight savings time offset
+const float seaLevelPressure = 1013.25; // Standard pressure at sea level used for calculating altitude
 
 MQUnifiedsensor MQ135(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type); //Input values needed to setup MQ135
 DHT dht(DHT11_PIN, DHT11); //Sets DHT pin to 18 and the DHT type to 11
@@ -47,6 +51,7 @@ void bootScreen();
 void printTempC();
 void printTempF();
 void printTime();
+void printBMPData();
 void wifiStart();
 float getTemp();
 float getHumidity();
@@ -70,6 +75,7 @@ String gasType = "";
 void setup() {
   Serial.begin(9600);
   dht.begin();
+  bmp.begin(BMP_Address);
   lcd.init();
   lcd.backlight();
   bootScreen();
@@ -88,7 +94,7 @@ void configMQ135(float a, float b) { //Recieves chosen gas type with values to s
   MQ135.setB(b);
 }
 
-void calibrateMQ135() {
+void calibrateMQ135() { //Got this from MQ135 Library
   lcd.print("Calibrating MQ-135"); //Calibration code for MQ135 it will take 10 readings of R0 then using the average of them to set a baseline resistance for accurate air quality measurement
   delay(2000);
   float calcR0 = 0;
@@ -109,8 +115,8 @@ void menuCycle() {
 
   if (buttonState == HIGH && prevButtonState == LOW) { //buttonState is an active high switch so when the button is pressed it becomes low which becomes important in loop as we set buttonState equal to prevButtonState thus fufiling our if statement
 
-    currentMenu++;
-    currentMenu = currentMenu % (menuNum + 1); //Every time we press button in loop it goes back into if statement ading currentMenu. This line is used to loop back to our mainMenu
+    currentMenu++; //Every time we press button in loop it goes back into if statement adding currentMenu. 
+    currentMenu = currentMenu % (menuNum + 1); //This line is used to loop back to case 1 
 
     switch (currentMenu) {
     case 1:
@@ -130,10 +136,10 @@ void menuCycle() {
       while (escape == 0) {
         if (digitalRead(buttonTwo) == HIGH) {
           printTempC();
-        } else { //If button is pressed display temp in F
+        } else { //If buttonTwo is pressed display temp in F
           printTempF();
         }
-        if (digitalRead(switchButton) == LOW) { // If primary button press is detected break out, using escape reset and increment currentMenu
+        if (digitalRead(switchButton) == LOW) { 
           escape = 1;
         }
       }
@@ -143,7 +149,7 @@ void menuCycle() {
 
     case 3:
       lcd.clear();
-      lcd.print("BMP Placeholder");
+      printBMPData();
       while (escape == 0) {
         if (digitalRead(switchButton) == LOW) {
           escape = 1;
@@ -304,6 +310,18 @@ void printTempF() {
   lcd.print(humi);
   lcd.print("%");
 }
+void printBMPData(){
+  float pressure = bmp.readPressure(); //BMP 280 outputs pressue in Pa must divide by 100 to convert to hPa commonly used in weather measurements
+  float altitude = bmp.readAltitude(seaLevelPressure); //Uses standard pressure at sea level to make an accurate altitude measurement
+
+  lcd.print("Pressure: ");
+  lcd.print(pressure);
+  lcd.print(" hPa");
+  lcd.setCursor(0,2);
+  lcd.print("Altitiude: ");
+  lcd.print(altitude);
+  lcd.print(" m");
+}
 void bootScreen() {
   lcd.setCursor(0, 0); //setCursor function allows to place the cursor on (row,column) in this case the cursor is at position (0,0)
   lcd.print("Smart Envirnomental");
@@ -400,4 +418,7 @@ void wifiStart() {
   lcd.print("Connection Made");
   delay(1000);
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer); //Config the time with the proper offsets and NTP server address
+  lcd.clear();
+  lcd.print("Configuring Time");
+  delay(2000);
 }
