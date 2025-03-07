@@ -17,6 +17,10 @@
 #include <WiFi.h>
 #include <MQUnifiedsensor.h>
 #include <Adafruit_BMP280.h> //Library for BMP 280
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include "homepage.h"
 
 #define DHT11_PIN 18 // DHT 11 is connnected to pin 18 on ESP 32
 #define Board                   ("ESP-32") // These are used to setup MQ135 got them from MQUnifiedsensor.h
@@ -53,16 +57,19 @@ void printTempF();
 void printTime();
 void printBMPData();
 void wifiStart();
+void setupPath();
+void printCOAQI();
+void getCOAQI();
+void handleClient();
 float getTemp();
 float getHumidity();
 float getAirQuality();
 void printAirQuality();
 void configMQ135();
 void calibrateMQ135();
-void printCOAQI();
-void getCOAQI();
 float calculateCOAQI();
 float subMenu();
+
 
 int escape = 0;
 int loaded = 0;
@@ -71,6 +78,9 @@ int currentMenu = 0;
 int prevButtonState = 1;
 int menuNum = 4;
 String gasType = "";
+
+
+WebServer server(80);
 
 void setup() {
   Serial.begin(9600);
@@ -85,7 +95,8 @@ void setup() {
 }
 
 void loop() {
-  menuCycle();
+  server.handleClient();
+  menuCycle();  
 }
 
 void configMQ135(float a, float b) { //Recieves chosen gas type with values to setup sensor to detect certain gas
@@ -107,6 +118,7 @@ void calibrateMQ135() { //Got this from MQ135 Library
 }
 
 void menuCycle() {
+   
   if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
     prevButtonState = LOW;
     int loaded = 1;
@@ -114,15 +126,16 @@ void menuCycle() {
   buttonState = digitalRead(switchButton);
 
   if (buttonState == HIGH && prevButtonState == LOW) { //buttonState is an active high switch so when the button is pressed it becomes low which becomes important in loop as we set buttonState equal to prevButtonState thus fufiling our if statement
-
+   
     currentMenu++; //Every time we press button in loop it goes back into if statement adding currentMenu. 
     currentMenu = currentMenu % (menuNum + 1); //This line is used to loop back to case 1 
-
+    
     switch (currentMenu) {
     case 1:
       lcd.clear();
       while (escape == 0) {
         mainMenu();
+        handleClient();
         if (digitalRead(switchButton) == LOW) { //Again active high switch so when button is pressed esscape will be 1 breaking out of loop
           escape = 1;
         }
@@ -136,8 +149,10 @@ void menuCycle() {
       while (escape == 0) {
         if (digitalRead(buttonTwo) == HIGH) {
           printTempC();
+          handleClient();
         } else { //If buttonTwo is pressed display temp in F
           printTempF();
+          handleClient();
         }
         if (digitalRead(switchButton) == LOW) { 
           escape = 1;
@@ -149,8 +164,9 @@ void menuCycle() {
 
     case 3:
       lcd.clear();
-      printBMPData();
       while (escape == 0) {
+        printBMPData();
+        handleClient();
         if (digitalRead(switchButton) == LOW) {
           escape = 1;
         }
@@ -191,6 +207,7 @@ float subMenu() {
   if (buttonState == HIGH && prevButtonState == LOW) {
     currentMenu++;
     currentMenu = currentMenu % (menuNum + 1);
+    
 
     switch (currentMenu) {
     case 1:
@@ -198,6 +215,7 @@ float subMenu() {
       while (escape == 0) {
         configMQ135(36974, -3.109); //Call configMQ135 and pass these values to setup detection of CO
         getCOAQI();
+        handleClient();
         if (digitalRead(buttonTwo) == LOW) {
           escape = 1;
         }
@@ -214,6 +232,7 @@ float subMenu() {
         configMQ135(574.25, -2.222); //Call configMQ135 and pass these values to setup detection of LP Gas
         gasType = "LP Gas";
         printAirQuality();
+        handleClient();
         if (digitalRead(buttonTwo) == LOW) {
           escape = 1;
         }
@@ -230,6 +249,7 @@ float subMenu() {
         configMQ135(658.71, -2.168); //Call configMQ135 and pass these values to setup detection of Propane
         gasType = "Propane";
         printAirQuality();
+        handleClient();
         if (digitalRead(buttonTwo) == LOW) {
           escape = 1;
 
@@ -247,6 +267,7 @@ float subMenu() {
         configMQ135(3616.1, -2.675); //Call configMQ135 and pass these values to setup detection of Alcohol
         gasType = "Alcohol";
         printAirQuality();
+        handleClient();
         if (digitalRead(buttonTwo) == LOW) {
           escape = 1;
         }
@@ -285,7 +306,7 @@ void printTempC() {
   float humi = getHumidity();
 
   lcd.setCursor(3, 0);
-  lcd.print("Temperature(C) ");
+  lcd.print("raturerature(C) ");
   lcd.setCursor(0, 1);
   lcd.print("Celcius:      ");
   lcd.print(tempC);
@@ -409,10 +430,12 @@ void printCOAQI(String quality, float aqi, float ppm) { //Values from getCOAQI t
 
 void wifiStart() {
   lcd.clear();
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   lcd.print("Connecting to ");
   lcd.print(ssid);
   while (WiFi.status() != WL_CONNECTED) {}
+  setupPath();
   lcd.clear();
   lcd.setCursor(2, 0);
   lcd.print("Connection Made");
@@ -421,4 +444,33 @@ void wifiStart() {
   lcd.clear();
   lcd.print("Configuring Time");
   delay(2000);
+}
+
+void handleClient(){
+  server.handleClient();
+  delay(100);
+  Serial.println("It works!!");
+}
+
+void setupPath(){
+  server.on("/", handleRoot);
+  server.on("/TempC", handleTempC);
+  server.on("/TempF", handleTempF);
+  server.begin();
+}
+
+void handleRoot(){
+  server.send(200, "text/html", homePagePart1);
+}
+
+void handleTempC() {
+  float tempC = getTemp();
+  String C = String(tempC);
+  server.send(200, "text/plain", C);
+}
+
+void handleTempF(){
+  float tempF = (getTemp() * 1.8) + 32;
+  String F = String(tempF);
+  server.send(200, "text/plain", F);
 }
