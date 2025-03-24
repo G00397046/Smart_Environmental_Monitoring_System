@@ -30,30 +30,37 @@ String homePagePart1 = F(
           font-size: 20px;
         }
     </style>
-    <script> 
-          function fetchTempC() { 
-            fetch('/TempC') 
-              .then(response => response.text()) 
-              .then(tempC => { 
-                console.log("Temp C:", tempC); 
-                document.getElementById("tempCValue").innerText = tempC; 
-              }) 
-              .catch(error => console.error('Error fetching temperature:', error)); 
-          } 
-          setInterval(fetchTempC, 1000); 
-          window.onload = fetchTempC; 
+    <script>
+      var socket;
 
-          function fetchTempF() { 
-            fetch('/TempF') 
-              .then(response => response.text()) 
-              .then(tempF => { 
-                console.log("Temp F:", tempF); 
-                document.getElementById("tempFValue").innerText = tempF; 
-              }) 
-              .catch(error => console.error('Error fetching temperature:', error)); 
-          } 
-          setInterval(fetchTempF, 1000); 
-          window.onload = fetchTempF; 
+        function initWebSocket(){
+          socket = new WebSocket("ws://" + window.location.hostname + "/ws");
+
+          socket.onopen = function() {
+          console.log("WebSocket connected");
+
+
+      };
+        socket.onmessage = function(event) {
+        var data = JSON.parse(event.data);
+          document.getElementById("TempC").innerText = data.TemperatureC;
+          document.getElementById("TempF").innerText = data.TemperatureF;
+          document.getElementById("humidity").innerText = data.Humidity;
+          document.getElementById("pressure").innerText = data.Pressure;
+          document.getElementById("altitude").innerText = data.Altitude;
+          document.getElementById("ppm").innerText = data.PPM;
+          document.getElementById("aqi").innerText = data.AQI;
+          document.getElementById("quality").innerText = data.Quality;
+          
+
+      };
+        socket.onclose = function() {
+        console.log("WebSocket disconnected, retrying...");
+        setTimeout(initWebSocket, 10000);
+      };
+    }
+     
+          
         </script> 
 </head>
 <body>
@@ -64,15 +71,40 @@ String homePagePart1 = F(
         <tr>
             <th>Temp C</th>
             <th>Temp F</th>
+            <th>Humidity</th>
+            
+        </tr>
+
+        <tr>
+            <td><span id="TempC"></span> °C</td>
+            <td> <span id="TempF"></span> °F</td>
+            <td> <span id="humidity"></span> %</td>
+        </tr>
+
+         <tr>
+            <th>AQI</th>
+            <th>Quality</th>
+            <th>PPM</th>
+            
+        </tr>
+
+        <tr>
+            <td><span id="aqi"></span></td>
+            <td> <span id="quality"></span></td>
+            <td> <span id="ppm"></span></td>
+        </tr>
+
+         <tr>
             <th>Pressure</th>
             <th>Altitude</th>
+            
+            
         </tr>
         <tr>
-            <td><span id="tempCValue"></span> °C</td>
-            <td> <span id="tempFValue"></span> °F</td>
-            <td>Reading hPa</td>
-            <td>Reading m</td>
+            <td><span id="pressure"></span> hPa</td>
+            <td> <span id="altitude"></span> m</td>
         </tr>
+
     </table>
 
 </body>

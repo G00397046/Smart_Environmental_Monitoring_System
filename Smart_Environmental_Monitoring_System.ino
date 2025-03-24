@@ -14,12 +14,12 @@
 #include <LiquidCrystal_I2C.h> //Library for LCD1
 #include "DHT.h" //Library for  DHT 11 Temp Sensor
 #include "time.h" //Time library on ESP 32
-#include <WiFi.h>
 #include <MQUnifiedsensor.h>
 #include <Adafruit_BMP280.h> //Library for BMP 280
-#include <WiFiClient.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <ArduinoJson.h>
 #include "homepage.h"
 
 #define DHT11_PIN 18 // DHT 11 is connnected to pin 18 on ESP 32
@@ -52,12 +52,12 @@ LiquidCrystal_I2C lcd(LCD_Address, LCD_COL, LCD_ROW); //Sets LCD address to 0x27
 void menuCycle();
 void mainMenu();
 void bootScreen();
-void printTempC();
+void printTemp();
 void printTempF();
 void printTime();
 void printBMPData();
 void wifiStart();
-void setupPath();
+void setupServer();
 void printCOAQI();
 void getCOAQI();
 void handleClient();
@@ -69,6 +69,9 @@ void configMQ135();
 void calibrateMQ135();
 float calculateCOAQI();
 float subMenu();
+void getSensorData();
+void printDataType();
+void handleSensorData();
 
 
 int escape = 0;
@@ -78,9 +81,12 @@ int currentMenu = 0;
 int prevButtonState = 1;
 int menuNum = 4;
 String gasType = "";
+int printFlag = 1;
 
 
-WebServer server(80);
+// Async Web Server and WebSocket
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 
 void setup() {
   Serial.begin(9600);
@@ -91,11 +97,98 @@ void setup() {
   bootScreen();
   pinMode(switchButton, INPUT_PULLUP); //Using pullup resistors in ESP-32  
   pinMode(buttonTwo, INPUT_PULLUP);
+}
+
+void getSensorData(){
+  struct tm timeinfo; //Created the structure to store local time info
+  getLocalTime(&timeinfo); //Saving all the details of the local time to the time structure
+  float tempC = dht.readTemperature(); //readTemperature() is a function in DHT library used to activate temperature readings
+  float tempF = (tempC * 1.8) + 32;
+  float humidity = dht.readHumidity();
+  float pressure = (bmp.readPressure() / 100); //BMP 280 outputs pressue in Pa must divide by 100 to convert to hPa commonly used in weather measurements
+  float altitude = bmp.readAltitude(seaLevelPressure); //Uses standard pressure at sea level to make an accurate altitude measurement
+  MQ135.update(); //Mq135 function from library updates internal state of MQ135
+  float PPM = MQ135.readSensor(); //Another MQ135 function sets airQuality equal to analog vaule given from MQ135
+  float AQI = 0;
+  String quality = ""; 
+
+  if (PPM >= 0 && PPM <= 4.4) { //If PPM is from 0-4.4 Pass The Concentration of CO along with breakpoints of PPM and the AQI scale range
+    AQI = calculateCOAQI(PPM, 0, 4.4, 0, 50);
+    quality = "Good                ";
+    
+  } else if (PPM >= 4.5 && PPM <= 9.4) {
+    AQI = calculateCOAQI(PPM, 4.5, 9.4, 51, 100);
+    quality = "Moderate            "; //Tabs ensure no overlap. Example if AQI went from Moderate to Good the message would be Goodrate
+  
+  } else if (PPM >= 9.5 && PPM <= 12.4) {
+    AQI = calculateCOAQI(PPM, 9.5, 12.4, 101, 150);
+    quality = "Harmful To Sensitive";
+    
+  } else if (PPM >= 12.5 && PPM <= 15.4) {
+    AQI = calculateCOAQI(PPM, 12.5, 15.4, 151, 200);
+    quality = "Harmful             ";
+   
+  } else if (PPM >= 15.5 && PPM <= 30.4) {
+    AQI = calculateCOAQI(PPM, 15.5, 30.4, 201, 300);
+    quality = "Very Harmful        ";
+    
+  } else if (PPM >= 30.5 && PPM <= 40.4) {
+    AQI = calculateCOAQI(PPM, 30.5, 40.4, 301, 400);
+    quality = "Hazardous           ";
+    
+  } else if (PPM > 40.5) {
+    AQI = calculateCOAQI(PPM, 40.5, PPM, 401, 500);
+    quality = "Very Hazardous      ";
+
+ }
+
+handleSensorData(tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
+printDataType(&timeinfo, tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
+}
+
+void handleSensorData(float tempC, float tempF, float humidity, float pressure, float altitude, float PPM, float AQI, String quality){
+  Serial.println(tempC);
+   StaticJsonDocument<200> jsonDoc;
+   jsonDoc["TemperatureC"] = tempC;
+   jsonDoc["TemperatureF"] = tempF;
+   jsonDoc["Humidity"] = humidity;
+   jsonDoc["Pressure"] = pressure;
+   jsonDoc["Altitude"] = altitude;
+   jsonDoc["PPM"] = PPM;
+   jsonDoc["AQI"] = AQI;
+   jsonDoc["Quality"] = quality;
+
+   String message;
+   serializeJson(jsonDoc, message);
+   ws.textAll(message);
+
+}
+
+void printDataType(struct tm* timeinfo, float tempC, float tempF, float humidity, float pressure, float altitude, float PPM, float AQI, String quality){
+  switch(printFlag){
+    case 1:
+    mainMenu(timeinfo);
+    break;
+    case 2: 
+    printTemp(tempC, tempF, humidity);
+    break;
+    case 3:
+    printBMPData(pressure, altitude);
+    break;
+    case 4:
+    printCOAQI(PPM, AQI, quality);
+    break;
+    case 5: //Used this article to group cases together https://stackoverflow.com/questions/4494170/grouping-switch-statement-cases-together
+    case 6:
+    case 7:
+      printAirQuality(PPM);
+    
+    break;
+    }
 
 }
 
 void loop() {
-  server.handleClient();
   menuCycle();  
 }
 
@@ -118,8 +211,7 @@ void calibrateMQ135() { //Got this from MQ135 Library
 }
 
 void menuCycle() {
-   
-  if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
+   if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
     prevButtonState = LOW;
     int loaded = 1;
   }
@@ -134,10 +226,10 @@ void menuCycle() {
     case 1:
       lcd.clear();
       while (escape == 0) {
-        mainMenu();
-        handleClient();
+        getSensorData();
         if (digitalRead(switchButton) == LOW) { //Again active high switch so when button is pressed esscape will be 1 breaking out of loop
-          escape = 1;
+        printFlag++;
+        escape = 1;
         }
       }
 
@@ -147,14 +239,9 @@ void menuCycle() {
     case 2:
       lcd.clear();
       while (escape == 0) {
-        if (digitalRead(buttonTwo) == HIGH) {
-          printTempC();
-          handleClient();
-        } else { //If buttonTwo is pressed display temp in F
-          printTempF();
-          handleClient();
-        }
+        getSensorData();
         if (digitalRead(switchButton) == LOW) { 
+          printFlag++;
           escape = 1;
         }
       }
@@ -165,9 +252,9 @@ void menuCycle() {
     case 3:
       lcd.clear();
       while (escape == 0) {
-        printBMPData();
-        handleClient();
+        getSensorData();
         if (digitalRead(switchButton) == LOW) {
+          printFlag++;
           escape = 1;
         }
       }
@@ -180,6 +267,7 @@ void menuCycle() {
       while (escape == 0) {
         if (subMenu() == 1) { //Keep calling subMenu until we recieve 1
           currentMenu = 0; //Resets currentMenu to ensure we always go back to case 1
+          printFlag = 1;
           escape = 1; //Break out of loop
         }
 
@@ -196,7 +284,6 @@ void menuCycle() {
 }
 
 float subMenu() {
-
   if (loaded == 0) { //Allows us to enter the menu right away without waiting for button press
     prevButtonState = LOW;
     int loaded = 1;
@@ -208,15 +295,14 @@ float subMenu() {
     currentMenu++;
     currentMenu = currentMenu % (menuNum + 1);
     
-
     switch (currentMenu) {
     case 1:
       lcd.clear();
       while (escape == 0) {
         configMQ135(36974, -3.109); //Call configMQ135 and pass these values to setup detection of CO
-        getCOAQI();
-        handleClient();
+        getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
+          printFlag++;
           escape = 1;
         }
         if (digitalRead(switchButton) == LOW) {
@@ -231,9 +317,9 @@ float subMenu() {
       while (escape == 0) {
         configMQ135(574.25, -2.222); //Call configMQ135 and pass these values to setup detection of LP Gas
         gasType = "LP Gas";
-        printAirQuality();
-        handleClient();
+        getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
+          printFlag++;
           escape = 1;
         }
         if (digitalRead(switchButton) == LOW) {
@@ -248,9 +334,10 @@ float subMenu() {
       while (escape == 0) {
         configMQ135(658.71, -2.168); //Call configMQ135 and pass these values to setup detection of Propane
         gasType = "Propane";
-        printAirQuality();
-        handleClient();
+        getSensorData();
+        Serial.println(printFlag);
         if (digitalRead(buttonTwo) == LOW) {
+          printFlag++;
           escape = 1;
 
         }
@@ -266,9 +353,10 @@ float subMenu() {
       while (escape == 0) {
         configMQ135(3616.1, -2.675); //Call configMQ135 and pass these values to setup detection of Alcohol
         gasType = "Alcohol";
-        printAirQuality();
-        handleClient();
+        Serial.println(printFlag);
+        getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
+          printFlag++;
           escape = 1;
         }
         if (digitalRead(switchButton) == LOW) {
@@ -280,6 +368,7 @@ float subMenu() {
     }
 
     if (currentMenu == menuNum) {
+      printFlag = 4;
       currentMenu = 0;
     }
   }
@@ -288,38 +377,28 @@ float subMenu() {
   return 0; //Returns 0 to ensure if statement continues to check for 1
 }
 
-void mainMenu() {
+void mainMenu(struct tm* timeinfo) {
   lcd.setCursor(2, 0);
   lcd.print("SEMS - Main Menu");
-  printTime();
-}
-
-void printTime() { //Used Random Nerd Tutorial NTP Date and Time Setup Guide https://randomnerdtutorials.com/esp32-date-time-ntp-client-server-arduino/
   lcd.setCursor(0, 3);
-  struct tm timeinfo; //Created the structure to store local time info
-  getLocalTime( & timeinfo); //Saving all the details of the local time to the time structure
-  lcd.print( & timeinfo, " %a, %b %d  %H:%M "); //To access the members of timeinfo you use the following specifiers
+  getLocalTime(timeinfo); //Saving all the details of the local time to the time structure
+  lcd.print(timeinfo, " %a, %b %d  %H:%M "); //To access the members of timeinfo you use the following specifiers
 }
 
-void printTempC() {
-  float tempC = getTemp(); //Calls getTemp which returns current temp readings and sets tempC equal to them
-  float humi = getHumidity();
-
-  lcd.setCursor(3, 0);
-  lcd.print("raturerature(C) ");
-  lcd.setCursor(0, 1);
-  lcd.print("Celcius:      ");
-  lcd.print(tempC);
-  lcd.print("C");
-  lcd.setCursor(0, 2);
-  lcd.print("Humidity:     ");
-  lcd.print(humi);
-  lcd.print("%");
-}
-void printTempF() {
-  float tempF = (getTemp() * 1.8) + 32;
-  float humi = getHumidity();
-
+void printTemp(float tempC, float tempF, float humidity) {
+  if (digitalRead(buttonTwo) == HIGH) {
+    lcd.setCursor(3, 0);
+    lcd.print("Temperature(C) ");
+    lcd.setCursor(0, 1);
+    lcd.print("Celcius:      ");
+    lcd.print(tempC);
+    lcd.print("C");
+    lcd.setCursor(0, 2);
+    lcd.print("Humidity:     ");
+    lcd.print(humidity);
+    lcd.print("%");
+  }
+  else {
   lcd.setCursor(3, 0);
   lcd.print("Temperature(F) ");
   lcd.setCursor(0, 1);
@@ -328,18 +407,21 @@ void printTempF() {
   lcd.print("F");
   lcd.setCursor(0, 2);
   lcd.print("Humidity:     ");
-  lcd.print(humi);
+  lcd.print(humidity);
   lcd.print("%");
 }
-void printBMPData(){
-  float pressure = (bmp.readPressure() / 100); //BMP 280 outputs pressue in Pa must divide by 100 to convert to hPa commonly used in weather measurements
-  float altitude = bmp.readAltitude(seaLevelPressure); //Uses standard pressure at sea level to make an accurate altitude measurement
+        
+}
 
+void printBMPData(float pressure, float altitude){
+  lcd.setCursor(0,0);
   lcd.print("Pressure: ");
+  lcd.setCursor(0,1);
   lcd.print(pressure);
   lcd.print(" hPa");
   lcd.setCursor(0,2);
   lcd.print("Altitiude: ");
+   lcd.setCursor(0,3);
   lcd.print(altitude);
   lcd.print(" m");
 }
@@ -359,62 +441,19 @@ float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Note
 
 }
 
-void getCOAQI() { //To calculate Carbon Monoxide AQI We Ranges Breakpoints of CO
-  float PPM = getAirQuality(); //Set PPM = to value given from getAirQuality() 
-
-  if (PPM >= 0 && PPM <= 4.4) { //If PPM is from 0-4.4 Pass The Concentration of CO along with breakpoints of PPM and the AQI scale range
-    float AQI = calculateCOAQI(PPM, 0, 4.4, 0, 50);
-    printCOAQI("Good                ", AQI, PPM); //Calls printCOAQI passing string for air quality value of AQI and PPM
-  } else if (PPM >= 4.5 && PPM <= 9.4) {
-    float AQI = calculateCOAQI(PPM, 4.5, 9.4, 51, 100);
-    printCOAQI("Moderate            ", AQI, PPM); //Spaces ensure no overlap
-  } else if (PPM >= 9.5 && PPM <= 12.4) {
-    float AQI = calculateCOAQI(PPM, 9.5, 12.4, 101, 150);
-    printCOAQI("Harmful To Sensitive", AQI, PPM);
-  } else if (PPM >= 12.5 && PPM <= 15.4) {
-    float AQI = calculateCOAQI(PPM, 12.5, 15.4, 151, 200);
-    printCOAQI("Harmful             ", AQI, PPM);
-  } else if (PPM >= 15.5 && PPM <= 30.4) {
-    float AQI = calculateCOAQI(PPM, 15.5, 30.4, 201, 300);
-    printCOAQI("Very Harmful        ", AQI, PPM);
-  } else if (PPM >= 30.5 && PPM <= 40.4) {
-    float AQI = calculateCOAQI(PPM, 30.5, 40.4, 301, 400);
-    printCOAQI("Hazardous           ", AQI, PPM);
-  } else if (PPM > 40.5) {
-    float AQI = calculateCOAQI(PPM, 40.5, PPM, 401, 500);
-    printCOAQI("Very Hazardous      ", AQI, PPM);
-  }
-
-}
-
-float getTemp() {
-  float temperature = dht.readTemperature(); //readTemperature() is a function in DHT library used to activate temperature readings
-  return temperature;
-}
-
-float getHumidity() {
-  float humidity = dht.readHumidity(); //readHumidity() is a function in DHT library used to activate humidity readings
-  return humidity;
-}
-
-float getAirQuality() {
-  MQ135.update(); //Mq135 function from library updates internal state of MQ135
-  float airQuality = MQ135.readSensor(); //Another MQ135 function sets airQuality equal to analog vaule given from MQ135
-  return airQuality;
-}
-
-void printAirQuality() {
+void printAirQuality(float PPM) {
+  Serial.println("Inside");
   lcd.setCursor(0, 0);
   lcd.print("Gas Type: ");
   lcd.print(gasType); //Global variable set earlier to print Gas Type sensor is detecting
   lcd.setCursor(0, 2);
   lcd.print("Air Quality:");
   lcd.setCursor(0, 3);
-  lcd.print(getAirQuality()); //Printing air quality derived from getAirQuality
+  lcd.print(PPM); //Printing air quality derived from getAirQuality NEED PPM
   lcd.print(" PPM");
 }
 
-void printCOAQI(String quality, float aqi, float ppm) { //Values from getCOAQI to be printed on LCD
+void printCOAQI(float PPM, float AQI, String quality) { //Values from getCOAQI to be printed on LCD
   lcd.setCursor(0, 0);
   lcd.print("Air Quality:");
   lcd.setCursor(0, 1);
@@ -422,9 +461,9 @@ void printCOAQI(String quality, float aqi, float ppm) { //Values from getCOAQI t
   lcd.print(quality);
   lcd.setCursor(0, 2);
   lcd.print("AQI: ");
-  lcd.print(aqi);
+  lcd.print(AQI);
   lcd.setCursor(0, 3);
-  lcd.print(ppm);
+  lcd.print(PPM);
   lcd.print(" PPM");
 }
 
@@ -435,7 +474,10 @@ void wifiStart() {
   lcd.print("Connecting to ");
   lcd.print(ssid);
   while (WiFi.status() != WL_CONNECTED) {}
-  setupPath();
+  server.on("/", handleRoot);
+  ws.onEvent(onWebSocketEvent);
+  server.addHandler(&ws);
+  server.begin();
   lcd.clear();
   lcd.setCursor(2, 0);
   lcd.print("Connection Made");
@@ -446,31 +488,12 @@ void wifiStart() {
   delay(2000);
 }
 
-void handleClient(){
-  server.handleClient();
-  delay(100);
-  Serial.println("It works!!");
+void handleRoot(AsyncWebServerRequest *request){
+  request->send_P(200, "text/html", homePagePart1.c_str());
 }
 
-void setupPath(){
-  server.on("/", handleRoot);
-  server.on("/TempC", handleTempC);
-  server.on("/TempF", handleTempF);
-  server.begin();
-}
 
-void handleRoot(){
-  server.send(200, "text/html", homePagePart1);
-}
 
-void handleTempC() {
-  float tempC = getTemp();
-  String C = String(tempC);
-  server.send(200, "text/plain", C);
-}
 
-void handleTempF(){
-  float tempF = (getTemp() * 1.8) + 32;
-  String F = String(tempF);
-  server.send(200, "text/plain", F);
-}
+
+
