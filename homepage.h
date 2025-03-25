@@ -60,7 +60,7 @@ String homePagePart1 = F(
       };
     }
      
-          
+          window.onload = initWebSocket;
         </script> 
 </head>
 <body>

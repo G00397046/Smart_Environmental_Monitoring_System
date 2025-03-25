@@ -1,12 +1,12 @@
 //Patrick Cahill
-//3-7-25
+//3-25-25
 //Smart Environmental Monitoring System Upload 1
 
 //Parameters for Gas Sensor Config
 /*Gas    | a      | b
     H2     | 987.99 | -2.162
     LPG    | 574.25 | -2.222
-    CO     | 36974  | -3.109
+    CO     | 605.18 | -3.937  
     Alcohol| 3616.1 | -2.675
     Propane| 658.71 | -2.1681
 */
@@ -27,7 +27,7 @@
 #define Pin                     (33) // GPIO Pin for the MQ sensor (check esp32-wroom-32d.jpg image on ESP32 folder)
 #define Voltage_Resolution      (3.3) // 3.3V
 #define ADC_Bit_Resolution      (12) // 12-bit resolution for ESP32
-#define RatioMQ135CleanAir      (9.83) // RS / R0 = 9.83 ppm for MQ135
+#define RatioMQ135CleanAir      (3.6) // RS / R0 = 3.6 ppm for MQ135
 #define Type                    ("MQ-135") //MQ135 instead of MQ2, for air quality sensor
 Adafruit_BMP280 bmp; // I2C
 
@@ -48,31 +48,6 @@ const float seaLevelPressure = 1013.25; // Standard pressure at sea level used f
 MQUnifiedsensor MQ135(Board, Voltage_Resolution, ADC_Bit_Resolution, Pin, Type); //Input values needed to setup MQ135
 DHT dht(DHT11_PIN, DHT11); //Sets DHT pin to 18 and the DHT type to 11
 LiquidCrystal_I2C lcd(LCD_Address, LCD_COL, LCD_ROW); //Sets LCD address to 0x27 for a 20 by 4 character LCD
-
-void menuCycle();
-void mainMenu();
-void bootScreen();
-void printTemp();
-void printTempF();
-void printTime();
-void printBMPData();
-void wifiStart();
-void setupServer();
-void printCOAQI();
-void getCOAQI();
-void handleClient();
-float getTemp();
-float getHumidity();
-float getAirQuality();
-void printAirQuality();
-void configMQ135();
-void calibrateMQ135();
-float calculateCOAQI();
-float subMenu();
-void getSensorData();
-void printDataType();
-void handleSensorData();
-
 
 int escape = 0;
 int loaded = 0;
@@ -109,7 +84,7 @@ void getSensorData(){
   float altitude = bmp.readAltitude(seaLevelPressure); //Uses standard pressure at sea level to make an accurate altitude measurement
   MQ135.update(); //Mq135 function from library updates internal state of MQ135
   float PPM = MQ135.readSensor(); //Another MQ135 function sets airQuality equal to analog vaule given from MQ135
-  float AQI = 0;
+  float AQI;
   String quality = ""; 
 
   if (PPM >= 0 && PPM <= 4.4) { //If PPM is from 0-4.4 Pass The Concentration of CO along with breakpoints of PPM and the AQI scale range
@@ -141,13 +116,15 @@ void getSensorData(){
     quality = "Very Hazardous      ";
 
  }
+ 
 
 handleSensorData(tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
 printDataType(&timeinfo, tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
 }
 
 void handleSensorData(float tempC, float tempF, float humidity, float pressure, float altitude, float PPM, float AQI, String quality){
-  Serial.println(tempC);
+  Serial.println(AQI);
+  Serial.println(PPM);
    StaticJsonDocument<200> jsonDoc;
    jsonDoc["TemperatureC"] = tempC;
    jsonDoc["TemperatureF"] = tempF;
@@ -208,6 +185,7 @@ void calibrateMQ135() { //Got this from MQ135 Library
     Serial.print(".");
   }
   MQ135.setR0(calcR0 / 10);
+  configMQ135(605.18, -3.937); //Call configMQ135 and pass these values to setup detection of CO. Must be configed before subMenu otherwise it wont update webserver until we reach subMenu
 }
 
 void menuCycle() {
@@ -299,7 +277,6 @@ float subMenu() {
     case 1:
       lcd.clear();
       while (escape == 0) {
-        configMQ135(36974, -3.109); //Call configMQ135 and pass these values to setup detection of CO
         getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
@@ -432,9 +409,9 @@ void bootScreen() {
   lcd.print(" Monitoring System");
   delay(3000);
   lcd.clear();
+  calibrateMQ135();
   wifiStart();
   lcd.clear();
-  calibrateMQ135();
 }
 float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Note: BP means breakpoint and the index corresponds to the Concentration(BP) and Concentration is current PPM
   return ((ih - il) / (ch - cl)) * (ppm - cl) + il; // AQI = (Index(high) - Index(low)) / (Concentration(BP)(high) - Concentration(BP)(low)) * (Concentration -  Concentration(BP)(low)) + Index(low) 
@@ -475,7 +452,7 @@ void wifiStart() {
   lcd.print(ssid);
   while (WiFi.status() != WL_CONNECTED) {}
   server.on("/", handleRoot);
-  ws.onEvent(onWebSocketEvent);
+  //ws.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
   server.begin();
   lcd.clear();
