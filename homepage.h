@@ -20,16 +20,16 @@ String homePagePart1 = F(
             border: 1px solid black;
             padding: 10px;
             text-align: center;
+            width: 33%; /* Ensures equal width */
         }
         th {
             background-color: #f2f2f2;
-           
         }
-
-        tr{
-          font-size: 20px;
+        tr {
+            font-size: 20px;
         }
     </style>
+
     <script>
       var socket;
 
@@ -51,6 +51,7 @@ String homePagePart1 = F(
           document.getElementById("ppm").innerText = data.PPM;
           document.getElementById("aqi").innerText = data.AQI;
           document.getElementById("quality").innerText = data.Quality;
+           document.getElementById("fanStatus").innerText = data.fan ? "ON" : "OFF";
           
 
       };
@@ -58,6 +59,11 @@ String homePagePart1 = F(
         console.log("WebSocket disconnected, retrying...");
         setTimeout(initWebSocket, 10000);
       };
+    }
+      function toggleFan() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send("toggleFan");
+      }
     }
      
           window.onload = initWebSocket;
@@ -67,45 +73,44 @@ String homePagePart1 = F(
 
     <h1>Smart Environmental Monitoring System</h1>
 
-    <table>
+        <table>
         <tr>
             <th>Temp C</th>
             <th>Temp F</th>
             <th>Humidity</th>
-            
+        </tr>
+        <tr>
+            <td><span id="TempC"></span> °C</td>
+            <td><span id="TempF"></span> °F</td>
+            <td><span id="humidity"></span> %</td>
         </tr>
 
         <tr>
-            <td><span id="TempC"></span> °C</td>
-            <td> <span id="TempF"></span> °F</td>
-            <td> <span id="humidity"></span> %</td>
-        </tr>
-
-         <tr>
             <th>AQI</th>
             <th>Quality</th>
             <th>PPM</th>
-            
+        </tr>
+        <tr>
+            <td><span id="aqi"></span></td>
+            <td><span id="quality"></span></td>
+            <td><span id="ppm"></span></td>
         </tr>
 
         <tr>
-            <td><span id="aqi"></span></td>
-            <td> <span id="quality"></span></td>
-            <td> <span id="ppm"></span></td>
-        </tr>
-
-         <tr>
             <th>Pressure</th>
             <th>Altitude</th>
-            
-            
+            <th>Fan Control</th> 
         </tr>
         <tr>
             <td><span id="pressure"></span> hPa</td>
-            <td> <span id="altitude"></span> m</td>
+            <td><span id="altitude"></span> m</td>
+            <td>
+                <span id="fanStatus">OFF</span><br>
+                <button onclick="toggleFan()">Toggle Fan</button>
+            </td>
         </tr>
-
     </table>
+
 
 </body>
 </html>

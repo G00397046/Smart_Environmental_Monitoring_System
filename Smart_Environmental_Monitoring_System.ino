@@ -4,11 +4,10 @@
 
 //Parameters for Gas Sensor Config
 /*Gas    | a      | b
-    H2     | 987.99 | -2.162
-    LPG    | 574.25 | -2.222
+    CO2      | 110.47 | -2.862
     CO     | 605.18 | -3.937  
-    Alcohol| 3616.1 | -2.675
-    Propane| 658.71 | -2.1681
+    Alcohol  | 77.255 | -3.18 
+    NH4      | 102.2  | -2.473
 */
 
 #include <LiquidCrystal_I2C.h> //Library for LCD1
@@ -40,6 +39,7 @@ const int LCD_COL = 20; // 20 characters long
 const int LCD_ROW = 4; // 4 characters wide
 const int switchButton = 5; //Pin for switch button
 const int buttonTwo = 16;
+const int fanPin = 17;
 const char * ntpServer = "pool.ntp.org"; //This char represents the server where we request the time1
 const long gmtOffset_sec = 0; //This long defines the offset in seconds between your time zone and GMT
 const int daylightOffset_sec = 3600; //This int defines the Daylight savings time offset
@@ -57,7 +57,7 @@ int prevButtonState = 1;
 int menuNum = 4;
 String gasType = "";
 int printFlag = 1;
-
+bool fanState = false;
 
 // Async Web Server and WebSocket
 AsyncWebServer server(80);
@@ -123,8 +123,6 @@ printDataType(&timeinfo, tempC, tempF, humidity, pressure, altitude, PPM, AQI , 
 }
 
 void handleSensorData(float tempC, float tempF, float humidity, float pressure, float altitude, float PPM, float AQI, String quality){
-  Serial.println(AQI);
-  Serial.println(PPM);
    StaticJsonDocument<200> jsonDoc;
    jsonDoc["TemperatureC"] = tempC;
    jsonDoc["TemperatureF"] = tempF;
@@ -140,6 +138,12 @@ void handleSensorData(float tempC, float tempF, float humidity, float pressure, 
    ws.textAll(message);
 
 }
+
+void handleFan(){
+  String message = "{\"fan\":" + String(fanState ? 1 : 0) + "}";
+  ws.textAll(message);
+}
+
 
 void printDataType(struct tm* timeinfo, float tempC, float tempF, float humidity, float pressure, float altitude, float PPM, float AQI, String quality){
   switch(printFlag){
@@ -277,6 +281,7 @@ float subMenu() {
     case 1:
       lcd.clear();
       while (escape == 0) {
+        configMQ135(605.18, -3.937); //Call configMQ135 and pass these values to setup detection of CO.
         getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
@@ -292,8 +297,8 @@ float subMenu() {
     case 2:
       lcd.clear();
       while (escape == 0) {
-        configMQ135(574.25, -2.222); //Call configMQ135 and pass these values to setup detection of LP Gas
-        gasType = "LP Gas";
+        configMQ135(102.2, -2.473); //Call configMQ135 and pass these values to setup detection of NH4
+        gasType = "Ammonia";
         getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
@@ -309,10 +314,9 @@ float subMenu() {
     case 3:
       lcd.clear();
       while (escape == 0) {
-        configMQ135(658.71, -2.168); //Call configMQ135 and pass these values to setup detection of Propane
-        gasType = "Propane";
+        configMQ135(110.47, -2.862); //Call configMQ135 and pass these values to setup detection of CO2
+        gasType = "Carbon Dioxide";
         getSensorData();
-        Serial.println(printFlag);
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
           escape = 1;
@@ -328,9 +332,8 @@ float subMenu() {
     case 4:
       lcd.clear();
       while (escape == 0) {
-        configMQ135(3616.1, -2.675); //Call configMQ135 and pass these values to setup detection of Alcohol
+        configMQ135(77.255, -3.18 ); //Call configMQ135 and pass these values to setup detection of Alcohol 
         gasType = "Alcohol";
-        Serial.println(printFlag);
         getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
@@ -419,9 +422,9 @@ float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Note
 }
 
 void printAirQuality(float PPM) {
-  Serial.println("Inside");
   lcd.setCursor(0, 0);
   lcd.print("Gas Type: ");
+  lcd.setCursor(0,1);
   lcd.print(gasType); //Global variable set earlier to print Gas Type sensor is detecting
   lcd.setCursor(0, 2);
   lcd.print("Air Quality:");
@@ -452,7 +455,7 @@ void wifiStart() {
   lcd.print(ssid);
   while (WiFi.status() != WL_CONNECTED) {}
   server.on("/", handleRoot);
-  //ws.onEvent(onWebSocketEvent);
+  ws.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
   server.begin();
   lcd.clear();
@@ -469,6 +472,37 @@ void handleRoot(AsyncWebServerRequest *request){
   request->send_P(200, "text/html", homePagePart1.c_str());
 }
 
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+    AwsFrameInfo *info = (AwsFrameInfo*)arg;
+    if (info->final && info->opcode == WS_TEXT) {
+        String message = String((char*)data).substring(0, len);
+
+        if (message == "toggleFan") {
+          Serial.print(message);
+          Serial.print(fanState);
+          fanState = !fanState;
+          digitalWrite(fanPin, fanState);
+          handleFan();
+        }
+
+        
+    }
+}
+
+void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+                      void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+        case WS_EVT_CONNECT:
+            Serial.printf("WebSocket Client #%u connected\n", client->id());
+            break;
+        case WS_EVT_DISCONNECT:
+            Serial.printf("WebSocket Client #%u disconnected\n", client->id());
+            break;
+        case WS_EVT_DATA:
+            handleWebSocketMessage(arg, data, len);
+            break;
+    }
+}
 
 
 
