@@ -20,8 +20,8 @@ String homePagePart1 = F(
             border: 1px solid black;
             padding: 10px;
             text-align: center;
-            width: 33%; /* Ensures equal width */
-        }
+            width: 33%; 
+            
         th {
             background-color: #f2f2f2;
         }
@@ -43,16 +43,42 @@ String homePagePart1 = F(
       };
         socket.onmessage = function(event) {
         var data = JSON.parse(event.data);
-          document.getElementById("TempC").innerText = data.TemperatureC;
-          document.getElementById("TempF").innerText = data.TemperatureF;
-          document.getElementById("humidity").innerText = data.Humidity;
-          document.getElementById("pressure").innerText = data.Pressure;
-          document.getElementById("altitude").innerText = data.Altitude;
-          document.getElementById("ppm").innerText = data.PPM;
-          document.getElementById("aqi").innerText = data.AQI;
-          document.getElementById("quality").innerText = data.Quality;
-           document.getElementById("fanStatus").innerText = data.fan ? "ON" : "OFF";
-          
+          if (data.TemperatureC !== undefined) {
+              document.getElementById("TempC").innerText = data.TemperatureC;
+          }
+
+          if (data.TemperatureF !== undefined) {
+              document.getElementById("TempF").innerText = data.TemperatureF;
+          }
+
+          if (data.Humidity !== undefined) {
+              document.getElementById("humidity").innerText = data.Humidity;
+          }
+
+          if (data.Pressure !== undefined) {
+              document.getElementById("pressure").innerText = data.Pressure;
+          }
+
+          if (data.Altitude !== undefined) {
+              document.getElementById("altitude").innerText = data.Altitude;
+          }
+
+          if (data.PPM !== undefined) {
+              document.getElementById("ppm").innerText = data.PPM;
+          }
+
+          if (data.AQI !== undefined) {
+              document.getElementById("aqi").innerText = data.AQI;
+          }
+
+          if (data.Quality !== undefined) {
+              document.getElementById("quality").innerText = data.Quality;
+          }
+
+          if (data.fan !== undefined) {
+              document.getElementById("fanStatus").innerText = data.fan ? "ON" : "OFF";
+          }     
+
 
       };
         socket.onclose = function() {

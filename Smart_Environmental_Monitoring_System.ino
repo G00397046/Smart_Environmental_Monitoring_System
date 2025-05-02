@@ -35,7 +35,7 @@ const char * password = "Password";
 
 const int LCD_Address = 0x27; //Default address for 20x4 LCD
 const int BMP_Address = 0x76; //Address for BMP 280
-const int LCD_COL = 20; // 20 characters long
+const int LCD_COL = 20; // 20 characters longate 
 const int LCD_ROW = 4; // 4 characters wide
 const int switchButton = 5; //Pin for switch button
 const int buttonTwo = 16;
@@ -58,6 +58,7 @@ int menuNum = 4;
 String gasType = "";
 int printFlag = 1;
 bool fanState = false;
+bool manualFanState = false;
 
 // Async Web Server and WebSocket
 AsyncWebServer server(80);
@@ -72,6 +73,7 @@ void setup() {
   bootScreen();
   pinMode(switchButton, INPUT_PULLUP); //Using pullup resistors in ESP-32  
   pinMode(buttonTwo, INPUT_PULLUP);
+  pinMode(fanPin,OUTPUT);
 }
 
 void getSensorData(){
@@ -116,7 +118,19 @@ void getSensorData(){
     quality = "Very Hazardous      ";
 
  }
- 
+
+ if(tempC >= 24){
+  handleFan(1);
+}
+
+else if(AQI >= 150){
+  handleFan(1);
+}
+
+else{
+  toggleFan();
+}
+
 
 handleSensorData(tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
 printDataType(&timeinfo, tempC, tempF, humidity, pressure, altitude, PPM, AQI , quality);
@@ -139,7 +153,15 @@ void handleSensorData(float tempC, float tempF, float humidity, float pressure, 
 
 }
 
-void handleFan(){
+void handleFan(int fanState){
+  digitalWrite(fanPin, fanState);
+  String message = "{\"fan\":" + String(fanState ? 1 : 0) + "}";
+  ws.textAll(message);
+}
+
+void toggleFan(){
+  fanState = manualFanState; //Allows fan to be turned on manually even if its below temp or AQI threshold
+  digitalWrite(fanPin, fanState);
   String message = "{\"fan\":" + String(fanState ? 1 : 0) + "}";
   ws.textAll(message);
 }
@@ -188,7 +210,7 @@ void calibrateMQ135() { //Got this from MQ135 Library
     calcR0 += MQ135.calibrate(RatioMQ135CleanAir);
     Serial.print(".");
   }
-  MQ135.setR0(calcR0 / 10);
+  MQ135.setR0(calcR0 / 10); //R0 represents baseline or resistance on clean air
   configMQ135(605.18, -3.937); //Call configMQ135 and pass these values to setup detection of CO. Must be configed before subMenu otherwise it wont update webserver until we reach subMenu
 }
 
@@ -282,6 +304,7 @@ float subMenu() {
       lcd.clear();
       while (escape == 0) {
         configMQ135(605.18, -3.937); //Call configMQ135 and pass these values to setup detection of CO.
+        gasType= "CO";
         getSensorData();
         if (digitalRead(buttonTwo) == LOW) {
           printFlag++;
@@ -416,14 +439,14 @@ void bootScreen() {
   wifiStart();
   lcd.clear();
 }
-float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Note: BP means breakpoint and the index corresponds to the Concentration(BP) and Concentration is current PPM
+float calculateCOAQI(float ppm, float cl, float ch, float il, float ih) { //Got from Technical Assistance Document EPA Note: BP means breakpoint and the index corresponds to the Concentration(BP) and Concentration is current PPM
   return ((ih - il) / (ch - cl)) * (ppm - cl) + il; // AQI = (Index(high) - Index(low)) / (Concentration(BP)(high) - Concentration(BP)(low)) * (Concentration -  Concentration(BP)(low)) + Index(low) 
 
 }
 
 void printAirQuality(float PPM) {
-  lcd.setCursor(0, 0);
-  lcd.print("Gas Type: ");
+   lcd.setCursor(0, 0);
+  lcd.print("Detecting: ");
   lcd.setCursor(0,1);
   lcd.print(gasType); //Global variable set earlier to print Gas Type sensor is detecting
   lcd.setCursor(0, 2);
@@ -435,16 +458,15 @@ void printAirQuality(float PPM) {
 
 void printCOAQI(float PPM, float AQI, String quality) { //Values from getCOAQI to be printed on LCD
   lcd.setCursor(0, 0);
+  lcd.print("Detecting: ");
+  lcd.print(gasType); //Added CO to detecting so user is aware that its CO
+  lcd.setCursor(0, 1);
   lcd.print("Air Quality:");
-  lcd.setCursor(0, 1);
-  lcd.setCursor(0, 1);
-  lcd.print(quality);
   lcd.setCursor(0, 2);
-  lcd.print("AQI: ");
-  lcd.print(AQI);
+  lcd.print(quality);
   lcd.setCursor(0, 3);
-  lcd.print(PPM);
-  lcd.print(" PPM");
+  lcd.print("AQI ");
+  lcd.print(AQI);
 }
 
 void wifiStart() {
@@ -454,6 +476,7 @@ void wifiStart() {
   lcd.print("Connecting to ");
   lcd.print(ssid);
   while (WiFi.status() != WL_CONNECTED) {}
+  Serial.println(WiFi.localIP());
   server.on("/", handleRoot);
   ws.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
@@ -478,11 +501,8 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         String message = String((char*)data).substring(0, len);
 
         if (message == "toggleFan") {
-          Serial.print(message);
-          Serial.print(fanState);
-          fanState = !fanState;
-          digitalWrite(fanPin, fanState);
-          handleFan();
+          manualFanState = !manualFanState;
+          toggleFan();
         }
 
         
